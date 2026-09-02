@@ -87,11 +87,41 @@ export function getActiveProjectId(): string {
 }
 
 /**
+ * Sanitize task before storing in Firestore to prevent unsupported undefined values
+ */
+export function sanitizeTask(task: Task): Task {
+  const clean: Record<string, any> = {
+    id: String(task.id),
+    name: String(task.name || ''),
+    category: String(task.category || 'General'),
+    startDay: Number(task.startDay) || 1,
+    duration: Math.max(1, Number(task.duration) || 1),
+    progress: Math.min(100, Math.max(0, Number(task.progress) || 0)),
+    color: task.color || 'indigo',
+  };
+
+  if (task.assignee && task.assignee.trim()) {
+    clean.assignee = task.assignee.trim();
+  }
+  if (task.notes && task.notes.trim()) {
+    clean.notes = task.notes.trim();
+  }
+  if (task.dependsOn && task.dependsOn.trim()) {
+    clean.dependsOn = task.dependsOn.trim();
+  }
+  if (typeof task.isMilestone === 'boolean') {
+    clean.isMilestone = task.isMilestone;
+  }
+
+  return clean as Task;
+}
+
+/**
  * Listen to realtime updates on a project
  */
 export function subscribeToProject(
   projectId: string,
-  onUpdate: (data: CloudProjectData) => void,
+  onUpdate: (data: CloudProjectData | null) => void,
   onError?: (err: Error) => void
 ) {
   const projectRef = doc(db, 'projects', projectId);
@@ -100,12 +130,23 @@ export function subscribeToProject(
     projectRef,
     (snapshot) => {
       if (snapshot.exists()) {
-        const data = snapshot.data() as CloudProjectData;
+        const rawData = snapshot.data();
+        const data: CloudProjectData = {
+          projectName: rawData.projectName || 'Cronograma de Actividades',
+          totalDays: Number(rawData.totalDays) || 30,
+          currentDay: typeof rawData.currentDay === 'number' ? rawData.currentDay : null,
+          tasks: Array.isArray(rawData.tasks) ? (rawData.tasks as Task[]) : [],
+          updatedAt: rawData.updatedAt || new Date().toISOString(),
+          lastEditedBy: rawData.lastEditedBy || 'anon',
+        };
         onUpdate(data);
+      } else {
+        // Document does not exist yet on Firestore
+        onUpdate(null);
       }
     },
     (error) => {
-      console.error(`Error subscribing to project ${projectId}:`, error);
+      console.error(`[Firebase] Error subscribing to project "${projectId}":`, error);
       if (onError) onError(error);
     }
   );
@@ -121,11 +162,16 @@ export async function saveProjectToCloud(
   const projectRef = doc(db, 'projects', projectId);
   const currentUser = auth.currentUser;
 
+  const sanitizedTasks = (data.tasks || []).map(sanitizeTask);
+
   const payload: CloudProjectData = {
-    ...data,
+    projectName: data.projectName || 'Cronograma de Actividades',
+    totalDays: Number(data.totalDays) || 30,
+    currentDay: typeof data.currentDay === 'number' ? data.currentDay : null,
+    tasks: sanitizedTasks,
     updatedAt: new Date().toISOString(),
     lastEditedBy: currentUser ? currentUser.uid.substring(0, 6) : getCollaboratorId(),
   };
 
-  await setDoc(projectRef, payload, { merge: true });
+  await setDoc(projectRef, payload);
 }

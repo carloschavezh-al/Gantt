@@ -71,9 +71,10 @@ export default function App() {
   // Cloud Sync & Realtime state
   const [cloudStatus, setCloudStatus] = useState<'synced' | 'saving' | 'offline' | 'error'>('offline');
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  // Flags to avoid sync loops
-  const isRemoteSync = useRef(false);
+  // Flags to avoid sync loops and ensure atomic updates
+  const lastSyncedJson = useRef<string>('');
   const isInitialCloudLoaded = useRef(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -109,13 +110,21 @@ export default function App() {
     async function initCloud() {
       try {
         await ensureAuth();
-        setCloudStatus('synced');
+        setCloudStatus('saving');
 
         unsubscribe = subscribeToProject(
           projectId,
           (cloudData) => {
-            if (cloudData && cloudData.tasks && cloudData.tasks.length > 0) {
-              isRemoteSync.current = true;
+            if (cloudData !== null) {
+              // Existing shared project in Firestore
+              const serialized = JSON.stringify({
+                projectName: cloudData.projectName,
+                totalDays: cloudData.totalDays,
+                currentDay: cloudData.currentDay,
+                tasks: cloudData.tasks,
+              });
+              lastSyncedJson.current = serialized;
+
               setTasks(recalculateDependencies(cloudData.tasks));
               if (cloudData.projectName) setProjectName(cloudData.projectName);
               if (typeof cloudData.totalDays === 'number') setTotalDays(cloudData.totalDays);
@@ -128,30 +137,41 @@ export default function App() {
                 } catch {}
               }
               setCloudStatus('synced');
-            } else if (!isInitialCloudLoaded.current) {
-              // Document doesn't exist yet on Firestore, push initial project
-              saveProjectToCloud(projectId, {
+              isInitialCloudLoaded.current = true;
+              setIsInitialLoading(false);
+            } else {
+              // First time project on Firestore: create cloud document from initial tasks
+              const initialPayload = {
                 projectName,
                 totalDays,
                 currentDay,
                 tasks,
-              }).then(() => {
-                setCloudStatus('synced');
-                setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-              }).catch((err) => {
-                console.warn('Initial cloud push warning:', err);
-              });
+              };
+              saveProjectToCloud(projectId, initialPayload)
+                .then(() => {
+                  lastSyncedJson.current = JSON.stringify(initialPayload);
+                  isInitialCloudLoaded.current = true;
+                  setCloudStatus('synced');
+                  setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+                  setIsInitialLoading(false);
+                })
+                .catch((err) => {
+                  console.error('Error creating initial project on Firebase:', err);
+                  setCloudStatus('error');
+                  setIsInitialLoading(false);
+                });
             }
-            isInitialCloudLoaded.current = true;
           },
           (err) => {
             console.error('Firebase subscription error:', err);
             setCloudStatus('error');
+            setIsInitialLoading(false);
           }
         );
       } catch (err) {
         console.error('Failed to initialize Firebase Auth/Firestore:', err);
         setCloudStatus('error');
+        setIsInitialLoading(false);
       }
     }
 
@@ -162,15 +182,39 @@ export default function App() {
     };
   }, [projectId]);
 
-  // Automatically sync local modifications to Firestore with a debounce
+  // Flush any pending save before closing the window/tab
   useEffect(() => {
-    // If update originated from Firestore snapshot, do not re-send
-    if (isRemoteSync.current) {
-      isRemoteSync.current = false;
+    const handleBeforeUnload = () => {
+      if (isInitialCloudLoaded.current && saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveProjectToCloud(projectId, {
+          projectName,
+          totalDays,
+          currentDay,
+          tasks,
+        });
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [projectId, projectName, totalDays, currentDay, tasks]);
+
+  // Automatically sync user modifications to Firestore
+  useEffect(() => {
+    if (!isInitialCloudLoaded.current) {
       return;
     }
 
-    if (!isInitialCloudLoaded.current) {
+    const currentJson = JSON.stringify({
+      projectName,
+      totalDays,
+      currentDay,
+      tasks,
+    });
+
+    // Avoid syncing if this state change came directly from Firestore
+    if (currentJson === lastSyncedJson.current) {
       return;
     }
 
@@ -188,13 +232,14 @@ export default function App() {
           currentDay,
           tasks,
         });
+        lastSyncedJson.current = currentJson;
         setCloudStatus('synced');
         setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
       } catch (err) {
         console.error('Error saving to Firebase Firestore:', err);
         setCloudStatus('error');
       }
-    }, 800);
+    }, 500);
 
     return () => {
       if (saveTimeoutRef.current) {
@@ -281,6 +326,14 @@ export default function App() {
       setTotalDays(20);
       setCurrentDay(null);
       setProjectName('Cronograma de Actividades');
+
+      // Sync reset to cloud
+      saveProjectToCloud(projectId, {
+        projectName: 'Cronograma de Actividades',
+        totalDays: 20,
+        currentDay: null,
+        tasks: reset,
+      }).catch((err) => console.error('Error syncing reset to cloud:', err));
     }
   };
 
@@ -297,9 +350,22 @@ export default function App() {
     exportGanttToExcel(projectName, tasks, totalDays);
   };
 
-  // Guardar archivo de proyecto en JSON descargable
-  const handleSaveProject = () => {
+  // Guardar archivo de proyecto en JSON descargable y forzar guardado en la nube
+  const handleSaveProject = async () => {
     try {
+      setCloudStatus('saving');
+      // Forzar guardado inmediato en Firebase Firestore
+      await saveProjectToCloud(projectId, {
+        projectName,
+        totalDays,
+        currentDay,
+        tasks,
+      });
+      lastSyncedJson.current = JSON.stringify({ projectName, totalDays, currentDay, tasks });
+      setCloudStatus('synced');
+      setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+      // Descargar copia de respaldo local .json
       const projectData = {
         version: '1.0',
         exportedAt: new Date().toISOString(),
@@ -324,17 +390,18 @@ export default function App() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      showNotification('¡Archivo de proyecto guardado en tu equipo (.json)!');
+      showNotification('¡Proyecto guardado en la nube y descargado como respaldo (.json)!');
     } catch (err) {
-      console.error('Error al exportar proyecto:', err);
-      showNotification('Error al generar el archivo de respaldo', 'error');
+      console.error('Error al guardar proyecto:', err);
+      showNotification('Error al guardar el proyecto en la nube', 'error');
+      setCloudStatus('error');
     }
   };
 
   // Cargar archivo de proyecto desde JSON
   const handleLoadProject = (file: File) => {
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const content = event.target?.result as string;
         if (!content) throw new Error('Archivo vacío');
@@ -345,21 +412,33 @@ export default function App() {
         }
 
         const loadedTasks = recalculateDependencies(data.tasks);
+        const loadedProjectName = typeof data.projectName === 'string' ? data.projectName : projectName;
+        const loadedTotalDays = typeof data.totalDays === 'number' && data.totalDays >= 5 ? Math.min(60, data.totalDays) : totalDays;
+        const loadedCurrentDay = typeof data.currentDay !== 'undefined' ? data.currentDay : currentDay;
+
         setTasks(loadedTasks);
+        setProjectName(loadedProjectName);
+        setTotalDays(loadedTotalDays);
+        setCurrentDay(loadedCurrentDay);
 
-        if (typeof data.projectName === 'string') {
-          setProjectName(data.projectName);
-        }
+        // Immediate cloud push so all connected users see the restored project
+        await saveProjectToCloud(projectId, {
+          projectName: loadedProjectName,
+          totalDays: loadedTotalDays,
+          currentDay: loadedCurrentDay,
+          tasks: loadedTasks,
+        });
 
-        if (typeof data.totalDays === 'number' && data.totalDays >= 5) {
-          setTotalDays(Math.min(60, data.totalDays));
-        }
+        lastSyncedJson.current = JSON.stringify({
+          projectName: loadedProjectName,
+          totalDays: loadedTotalDays,
+          currentDay: loadedCurrentDay,
+          tasks: loadedTasks,
+        });
 
-        if (typeof data.currentDay !== 'undefined') {
-          setCurrentDay(data.currentDay);
-        }
-
-        showNotification(`¡Proyecto "${data.projectName || 'Cronograma'}" cargado con éxito!`);
+        setCloudStatus('synced');
+        setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        showNotification(`¡Proyecto "${loadedProjectName}" cargado y sincronizado en la nube!`);
       } catch (err) {
         console.error('Error al cargar proyecto:', err);
         showNotification('Error al leer el archivo. Asegúrate de seleccionar un archivo .json válido', 'error');
@@ -370,14 +449,35 @@ export default function App() {
 
   const handleShareLink = () => {
     try {
-      const url = window.location.href;
-      navigator.clipboard.writeText(url);
-      showNotification('¡Enlace del proyecto copiado! Cualquier persona con este enlace verá los cambios.');
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set('project', projectId);
+      const url = currentUrl.toString();
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url);
+        showNotification('¡Enlace único del proyecto copiado! Todos los que accedan verán y modificarán la misma información.');
+      } else {
+        window.prompt('Copia este enlace para compartir el cronograma colaborativo:', url);
+      }
     } catch (err) {
       console.error('Error copying link:', err);
       showNotification('No se pudo copiar el enlace automáticamente', 'error');
     }
   };
+
+  if (isInitialLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen w-full bg-slate-50 text-slate-700">
+        <div className="flex flex-col items-center gap-3 p-6 bg-white border border-slate-200 rounded-xl shadow-xs">
+          <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="text-center">
+            <h2 className="text-sm font-semibold text-slate-800">Conectando con la nube...</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Cargando el cronograma compartido en tiempo real</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen w-full bg-slate-50 text-slate-800 font-sans antialiased overflow-hidden relative">
