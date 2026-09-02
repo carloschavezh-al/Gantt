@@ -33,23 +33,32 @@ export const db: Firestore = firebaseConfig.firestoreDatabaseId
   }
 })();
 
-// Ensure anonymous authentication for multi-user collaboration
-export function ensureAuth(): Promise<User> {
-  return new Promise((resolve, reject) => {
-    onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        resolve(user);
-      } else {
-        try {
-          const cred = await signInAnonymously(auth);
-          resolve(cred.user);
-        } catch (err) {
-          console.error('Error signing in anonymously to Firebase:', err);
-          reject(err);
-        }
-      }
-    });
-  });
+// Generate or retrieve a lightweight client collaborator ID
+function getCollaboratorId(): string {
+  try {
+    const key = 'gantt_collab_id';
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = 'user_' + Math.random().toString(36).substring(2, 8);
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    return 'anon';
+  }
+}
+
+// Optionally initialize anonymous auth if supported by the project, but never block Firestore
+export async function ensureAuth(): Promise<User | null> {
+  if (auth.currentUser) return auth.currentUser;
+  try {
+    const cred = await signInAnonymously(auth);
+    return cred.user;
+  } catch {
+    // If anonymous auth is disabled by project policy (auth/admin-restricted-operation),
+    // Firestore rules permit unauthenticated public collaborative access directly.
+    return null;
+  }
 }
 
 export interface CloudProjectData {
@@ -109,14 +118,13 @@ export async function saveProjectToCloud(
   projectId: string,
   data: Omit<CloudProjectData, 'updatedAt'>
 ): Promise<void> {
-  await ensureAuth();
   const projectRef = doc(db, 'projects', projectId);
   const currentUser = auth.currentUser;
 
   const payload: CloudProjectData = {
     ...data,
     updatedAt: new Date().toISOString(),
-    lastEditedBy: currentUser ? currentUser.uid.substring(0, 6) : 'anon',
+    lastEditedBy: currentUser ? currentUser.uid.substring(0, 6) : getCollaboratorId(),
   };
 
   await setDoc(projectRef, payload, { merge: true });

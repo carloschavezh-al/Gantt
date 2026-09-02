@@ -2,8 +2,14 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /test/connection {
+      allow read: if true;
+    }
     match /projects/{projectId} {
-      allow read, write: if request.auth != null;
+      allow read: if true;
+      allow write: if request.resource.data.projectName is string
+                   && request.resource.data.totalDays is number
+                   && request.resource.data.tasks is list;
     }
   }
 }
