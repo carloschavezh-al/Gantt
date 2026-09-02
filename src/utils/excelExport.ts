@@ -1,0 +1,124 @@
+import * as XLSX from 'xlsx';
+import { Task } from '../types';
+import { getTaskEndDay } from './dependencyHelper';
+
+/**
+ * Genera un archivo Excel (.xlsx) limpio, visual y fácil de entender,
+ * semejante a la cuadrícula del diagrama de Gantt de la pantalla.
+ */
+export function exportGanttToExcel(
+  projectName: string,
+  tasks: Task[],
+  totalDays: number
+) {
+  // 1. Título principal y metadatos concisos
+  const cleanTitle = (projectName.trim() || 'Cronograma de Actividades').toUpperCase();
+  const todayFormatted = new Date().toLocaleDateString('es-ES', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+
+  const titleRow = [cleanTitle];
+  const subtitleRow = [
+    `Plazo total: ${totalDays} días   |   Total actividades: ${tasks.length}   |   Fecha: ${todayFormatted}`,
+  ];
+  const blankRow: string[] = [];
+
+  // 2. Encabezados de tabla simples y claros
+  const dayHeaders = Array.from({ length: totalDays }, (_, i) => `Día ${i + 1}`);
+  const headers = [
+    'N°',
+    'Actividad',
+    'Fase',
+    'Inicio',
+    'Días',
+    'Fin',
+    ...dayHeaders,
+  ];
+
+  // 3. Filas de actividades con representación gráfica directa
+  const dataRows = tasks.map((task, idx) => {
+    const endDay = getTaskEndDay(task);
+
+    // Celdas del cronograma por cada día
+    const timelineCells = Array.from({ length: totalDays }, (_, i) => {
+      const day = i + 1;
+      if (task.isMilestone) {
+        return day === task.startDay ? '◆' : '';
+      }
+      return day >= task.startDay && day <= endDay ? '■' : '';
+    });
+
+    return [
+      idx + 1,
+      task.name,
+      task.category || 'General',
+      `Día ${task.startDay}`,
+      task.isMilestone ? 'Hito' : `${task.duration} d`,
+      `Día ${endDay}`,
+      ...timelineCells,
+    ];
+  });
+
+  // 4. Fila final de leyenda explicativa
+  const legendRow = [
+    '',
+    'Leyenda:  ■ Actividad en curso   |   ◆ Hito',
+    '',
+    '',
+    '',
+    '',
+  ];
+
+  // 5. Construcción de la hoja de cálculo
+  const sheetData = [
+    titleRow,
+    subtitleRow,
+    blankRow,
+    headers,
+    ...dataRows,
+    blankRow,
+    legendRow,
+  ];
+
+  const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+  // 6. Configuración de anchos de columna:
+  // Columnas de datos legibles + columnas de días compactas tipo Gantt
+  const infoColWidths = [
+    { wch: 5 },  // N°
+    { wch: 38 }, // Actividad
+    { wch: 20 }, // Fase
+    { wch: 10 }, // Inicio
+    { wch: 9 },  // Días
+    { wch: 10 }, // Fin
+  ];
+
+  // Ancho estrecho para las columnas de días para que simule una cuadrícula visual de Gantt
+  const timelineColWidths = Array.from({ length: totalDays }, () => ({ wch: 6 }));
+  worksheet['!cols'] = [...infoColWidths, ...timelineColWidths];
+
+  // 7. Combinar celdas del título para una presentación profesional
+  const totalColumns = headers.length;
+  worksheet['!merges'] = [
+    // Título principal
+    { s: { r: 0, c: 0 }, e: { r: 0, c: Math.min(5, totalColumns - 1) } },
+    // Subtítulo
+    { s: { r: 1, c: 0 }, e: { r: 1, c: Math.min(5, totalColumns - 1) } },
+    // Leyenda
+    { s: { r: sheetData.length - 1, c: 1 }, e: { r: sheetData.length - 1, c: 4 } },
+  ];
+
+  // 8. Crear el libro de trabajo y descargar
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Cronograma');
+
+  const sanitizedName = projectName
+    .trim()
+    .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_\- ]/g, '')
+    .replace(/\s+/g, '_');
+
+  const filename = `${sanitizedName || 'Cronograma'}_Gantt.xlsx`;
+  XLSX.writeFile(workbook, filename);
+}

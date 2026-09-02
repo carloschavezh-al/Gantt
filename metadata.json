@@ -1,0 +1,6 @@
+{
+  "name": "Gantt de Actividades",
+  "description": "Diagrama de Gantt interactivo con tareas a la izquierda y plazos diarios (Día 1, Día 2, etc.) en columnas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
