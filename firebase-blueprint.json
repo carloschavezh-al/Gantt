@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "A collaborative Gantt schedule project",
+      "type": "object",
+      "properties": {
+        "projectName": {
+          "type": "string",
+          "description": "Title of the project"
+        },
+        "totalDays": {
+          "type": "number",
+          "description": "Total schedule timeline duration in days"
+        },
+        "currentDay": {
+          "type": "number",
+          "description": "Selected current day marker"
+        },
+        "tasks": {
+          "type": "array",
+          "description": "List of activities and phases in the Gantt chart"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        },
+        "lastEditedBy": {
+          "type": "string",
+          "description": "User identifier who made the last change"
+        }
+      },
+      "required": ["projectName", "totalDays", "tasks"]
+    }
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Stores shared project data for multi-user real-time collaboration"
+    }
+  }
+}
