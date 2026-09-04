@@ -29,6 +29,7 @@ interface GanttChartProps {
   onEditTask: (task: Task) => void;
   onReorderTasks: (tasks: Task[]) => void;
   onAddTaskAtDay?: (day: number) => void;
+  readOnly?: boolean;
 }
 
 export const GanttChart: React.FC<GanttChartProps> = ({
@@ -42,6 +43,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
   onEditTask,
   onReorderTasks,
   onAddTaskAtDay,
+  readOnly = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -360,6 +362,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     task: Task,
     type: 'move' | 'resize-start' | 'resize-end'
   ) => {
+    if (readOnly) return;
     e.stopPropagation();
     e.preventDefault();
     setDragging({
@@ -435,6 +438,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
   // Move task up/down in list
   const moveTask = (index: number, direction: 'up' | 'down') => {
+    if (readOnly) return;
     const newTasks = [...tasks];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= newTasks.length) return;
@@ -568,25 +572,27 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                   >
                     {/* Left: Reorder buttons, Status indicator, Task Name */}
                     <div className="flex items-center gap-2.5 min-w-0 flex-1 py-1">
-                      {/* Reorder arrows */}
-                      <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity -ml-2 shrink-0">
-                        <button
-                          onClick={() => moveTask(idx, 'up')}
-                          disabled={idx === 0}
-                          className="p-0.5 text-slate-400 hover:text-slate-800 disabled:opacity-20"
-                          title="Subir tarea"
-                        >
-                          <ChevronUp className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => moveTask(idx, 'down')}
-                          disabled={idx === tasks.length - 1}
-                          className="p-0.5 text-slate-400 hover:text-slate-800 disabled:opacity-20"
-                          title="Bajar tarea"
-                        >
-                          <ChevronDown className="w-3 h-3" />
-                        </button>
-                      </div>
+                      {/* Reorder arrows - solo en modo editable */}
+                      {!readOnly && (
+                        <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity -ml-2 shrink-0">
+                          <button
+                            onClick={() => moveTask(idx, 'up')}
+                            disabled={idx === 0}
+                            className="p-0.5 text-slate-400 hover:text-slate-800 disabled:opacity-20"
+                            title="Subir tarea"
+                          >
+                            <ChevronUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => moveTask(idx, 'down')}
+                            disabled={idx === tasks.length - 1}
+                            className="p-0.5 text-slate-400 hover:text-slate-800 disabled:opacity-20"
+                            title="Bajar tarea"
+                          >
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
 
                       {/* Task status indicator or milestone diamond */}
                       {task.isMilestone ? (
@@ -602,103 +608,111 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
                       {/* Task name: fully visible with all available horizontal space, no truncate */}
                       <div
-                        onClick={() => onEditTask(task)}
-                        className="font-medium text-slate-900 break-words whitespace-normal leading-snug hover:text-indigo-600 cursor-pointer flex-1 min-w-0 text-xs sm:text-[13px] tracking-tight pr-1"
-                        title="Clic para editar actividad"
+                        onClick={() => {
+                          if (!readOnly) onEditTask(task);
+                        }}
+                        className={`font-medium text-slate-900 break-words whitespace-normal leading-snug flex-1 min-w-0 text-xs sm:text-[13px] tracking-tight pr-1 ${
+                          readOnly
+                            ? 'cursor-default'
+                            : 'hover:text-indigo-600 cursor-pointer'
+                        }`}
+                        title={readOnly ? undefined : "Clic para editar actividad"}
                       >
                         {task.name}
                       </div>
                     </div>
 
-                    {/* Action Dropdown Menu (Desplegable que no ocupa espacio) */}
-                    <div className="relative shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveDropdownTaskId(activeDropdownTaskId === task.id ? null : task.id);
-                        }}
-                        className={`p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors ${
-                          activeDropdownTaskId === task.id
-                            ? 'bg-slate-100 text-slate-800 opacity-100'
-                            : 'opacity-0 group-hover:opacity-100'
-                        }`}
-                        title="Opciones de actividad"
-                      >
-                        <MoreVertical className="w-4 h-4" />
-                      </button>
-
-                      {activeDropdownTaskId === task.id && (
-                        <div
-                          onClick={(e) => e.stopPropagation()}
-                          className={`absolute right-0 ${
-                            idx >= Math.max(0, filteredTasks.length - 3) ? 'bottom-full mb-1' : 'top-full mt-1'
-                          } z-50 w-48 bg-white rounded-lg shadow-xl border border-slate-200 py-1 text-xs text-slate-700 divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100`}
+                    {/* Action Dropdown Menu (Solo en modo editable) */}
+                    {!readOnly && (
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveDropdownTaskId(activeDropdownTaskId === task.id ? null : task.id);
+                          }}
+                          className={`p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors ${
+                            activeDropdownTaskId === task.id
+                              ? 'bg-slate-100 text-slate-800 opacity-100'
+                              : 'opacity-0 group-hover:opacity-100'
+                          }`}
+                          title="Opciones de actividad"
                         >
-                          <div className="py-1">
-                            <button
-                              onClick={() => {
-                                setCutTaskId(task.id);
-                                setActiveDropdownTaskId(null);
-                              }}
-                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-50 hover:text-amber-600 transition-colors"
-                            >
-                              <Scissors className="w-3.5 h-3.5 text-slate-400" />
-                              <span>Cortar actividad</span>
-                            </button>
-                            <button
-                              onClick={() => {
-                                setActiveDropdownTaskId(null);
-                                onDuplicateTask(task);
-                              }}
-                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-50 hover:text-blue-600 transition-colors"
-                            >
-                              <Copy className="w-3.5 h-3.5 text-slate-400" />
-                              <span>Copiar actividad</span>
-                            </button>
-                            <button
-                              onClick={() => {
-                                setActiveDropdownTaskId(null);
-                                onEditTask(task);
-                              }}
-                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
-                            >
-                              <Edit2 className="w-3.5 h-3.5 text-slate-400" />
-                              <span>Editar actividad</span>
-                            </button>
-                          </div>
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
 
-                          {cutTaskId && cutTaskId !== task.id && (
-                            <div className="py-1 bg-amber-50/70">
+                        {activeDropdownTaskId === task.id && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className={`absolute right-0 ${
+                              idx >= Math.max(0, filteredTasks.length - 3) ? 'bottom-full mb-1' : 'top-full mt-1'
+                            } z-50 w-48 bg-white rounded-lg shadow-xl border border-slate-200 py-1 text-xs text-slate-700 divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100`}
+                          >
+                            <div className="py-1">
                               <button
                                 onClick={() => {
-                                  pasteAfterTask(cutTaskId, task.id);
-                                  setCutTaskId(null);
+                                  setCutTaskId(task.id);
                                   setActiveDropdownTaskId(null);
                                 }}
-                                className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-amber-100 text-amber-900 transition-colors font-semibold"
+                                className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-50 hover:text-amber-600 transition-colors"
                               >
-                                <CornerDownLeft className="w-3.5 h-3.5 text-amber-600" />
-                                <span>Pegar aquí (después)</span>
+                                <Scissors className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Cortar actividad</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setActiveDropdownTaskId(null);
+                                  onDuplicateTask(task);
+                                }}
+                                className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-50 hover:text-blue-600 transition-colors"
+                              >
+                                <Copy className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Copiar actividad</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setActiveDropdownTaskId(null);
+                                  onEditTask(task);
+                                }}
+                                className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
+                              >
+                                <Edit2 className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Editar actividad</span>
                               </button>
                             </div>
-                          )}
 
-                          <div className="py-1">
-                            <button
-                              onClick={() => {
-                                setActiveDropdownTaskId(null);
-                                onDeleteTask(task.id);
-                              }}
-                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-rose-50 text-rose-600 transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                              <span>Eliminar actividad</span>
-                            </button>
+                            {cutTaskId && cutTaskId !== task.id && (
+                              <div className="py-1 bg-amber-50/70">
+                                <button
+                                  onClick={() => {
+                                    pasteAfterTask(cutTaskId, task.id);
+                                    setCutTaskId(null);
+                                    setActiveDropdownTaskId(null);
+                                  }}
+                                  className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-amber-100 text-amber-900 transition-colors font-semibold"
+                                >
+                                  <CornerDownLeft className="w-3.5 h-3.5 text-amber-600" />
+                                  <span>Pegar aquí (después)</span>
+                                </button>
+                              </div>
+                            )}
+
+                            <div className="py-1">
+                              <button
+                                onClick={() => {
+                                  setActiveDropdownTaskId(null);
+                                  onDeleteTask(task.id);
+                                }}
+                                className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-rose-50 text-rose-600 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                                <span>Eliminar actividad</span>
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -962,17 +976,21 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                               key={day}
                               style={{ width: `${colWidth}px` }}
                               onClick={() => {
-                                if (!dragging) {
+                                if (!readOnly && !dragging) {
                                   onUpdateTask({
                                     ...task,
                                     startDay: day,
                                   });
                                 }
                               }}
-                              className={`h-full shrink-0 cursor-pointer transition-colors ${
-                                isHoveredDay ? 'bg-slate-100/40' : 'hover:bg-slate-100/50'
+                              className={`h-full shrink-0 transition-colors ${
+                                readOnly
+                                  ? 'cursor-default'
+                                  : isHoveredDay
+                                  ? 'cursor-pointer bg-slate-100/40'
+                                  : 'cursor-pointer hover:bg-slate-100/50'
                               }`}
-                              title={`Mover "${task.name}" para iniciar en Día ${day}`}
+                              title={readOnly ? undefined : `Mover "${task.name}" para iniciar en Día ${day}`}
                             />
                           );
                         })}
@@ -987,11 +1005,19 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                           }}
                           onMouseDown={(e) => handleMouseDown(e, task, 'move')}
                           onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            onEditTask(task);
+                            if (!readOnly) {
+                              e.stopPropagation();
+                              onEditTask(task);
+                            }
                           }}
-                          className="absolute z-10 cursor-move group/milestone flex items-center justify-center transition-transform hover:scale-110"
-                          title={`Hito: ${task.name} (Día ${activeStartDay}) - Arrastra para mover o doble clic para editar`}
+                          className={`absolute z-10 group/milestone flex items-center justify-center transition-transform ${
+                            readOnly ? 'cursor-default' : 'cursor-move hover:scale-110'
+                          }`}
+                          title={
+                            readOnly
+                              ? `Hito: ${task.name} (Día ${activeStartDay})`
+                              : `Hito: ${task.name} (Día ${activeStartDay}) - Arrastra para mover o doble clic para editar`
+                          }
                         >
                           <div className="w-7 h-7 rotate-45 bg-amber-500 border-2 border-white/40 rounded-xs shadow-xs flex items-center justify-center">
                             <Sparkles className="w-3.5 h-3.5 text-white -rotate-45" />
@@ -1006,29 +1032,41 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                           }}
                           onMouseDown={(e) => handleMouseDown(e, task, 'move')}
                           onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            onEditTask(task);
+                            if (!readOnly) {
+                              e.stopPropagation();
+                              onEditTask(task);
+                            }
                           }}
-                          className={`absolute h-8 rounded-lg shadow-xs z-10 cursor-move transition-all flex items-center overflow-hidden border-2 border-white/20 ${colorConfig.bar} ${
+                          className={`absolute h-8 rounded-lg shadow-xs z-10 transition-all flex items-center overflow-hidden border-2 border-white/20 ${colorConfig.bar} ${
+                            readOnly ? 'cursor-default' : 'cursor-move hover:shadow-sm'
+                          } ${
                             isBeingDragged
                               ? 'ring-2 ring-slate-600 ring-offset-1 scale-[1.01] shadow-md opacity-90'
-                              : 'hover:shadow-sm'
+                              : ''
                           }`}
-                          title={`${task.name}: Día ${activeStartDay} a Día ${endDay} (${activeDuration} días). Arrastra para mover o doble clic para editar.`}
+                          title={
+                            readOnly
+                              ? `${task.name}: Día ${activeStartDay} a Día ${endDay} (${activeDuration} días)`
+                              : `${task.name}: Día ${activeStartDay} a Día ${endDay} (${activeDuration} días). Arrastra para mover o doble clic para editar.`
+                          }
                         >
-                          {/* Left resize handle */}
-                          <div
-                            onMouseDown={(e) => handleMouseDown(e, task, 'resize-start')}
-                            className="absolute left-0 top-0 bottom-0 w-2.5 cursor-ew-resize hover:bg-white/40 z-20 transition-colors"
-                            title="Arrastrar para ajustar día de inicio"
-                          />
+                          {/* Left resize handle - only when not readOnly */}
+                          {!readOnly && (
+                            <div
+                              onMouseDown={(e) => handleMouseDown(e, task, 'resize-start')}
+                              className="absolute left-0 top-0 bottom-0 w-2.5 cursor-ew-resize hover:bg-white/40 z-20 transition-colors"
+                              title="Arrastrar para ajustar día de inicio"
+                            />
+                          )}
 
-                          {/* Right resize handle */}
-                          <div
-                            onMouseDown={(e) => handleMouseDown(e, task, 'resize-end')}
-                            className="absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize hover:bg-white/40 z-20 transition-colors"
-                            title="Arrastrar para ajustar duración en días"
-                          />
+                          {/* Right resize handle - only when not readOnly */}
+                          {!readOnly && (
+                            <div
+                              onMouseDown={(e) => handleMouseDown(e, task, 'resize-end')}
+                              className="absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize hover:bg-white/40 z-20 transition-colors"
+                              title="Arrastrar para ajustar duración en días"
+                            />
+                          )}
                         </div>
                       )}
                     </div>
@@ -1045,7 +1083,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded bg-indigo-600 inline-block border border-white/20" />
-            <span>Barra de actividad (Arrastrable)</span>
+            <span>{readOnly ? 'Barra de actividad' : 'Barra de actividad (Arrastrable)'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rotate-45 bg-amber-500 inline-block" />
@@ -1060,7 +1098,11 @@ export const GanttChart: React.FC<GanttChartProps> = ({
           </div>
         </div>
         <div className="hidden md:flex items-center gap-2 text-slate-400">
-          <span>* Arrastra o haz clic para mover, ajusta extremos o haz doble clic para editar.</span>
+          <span>
+            {readOnly
+              ? '* Modo consulta: visualización de actividades en tiempo real (solo lectura).'
+              : '* Arrastra o haz clic para mover, ajusta extremos o haz doble clic para editar.'}
+          </span>
         </div>
       </footer>
     </div>

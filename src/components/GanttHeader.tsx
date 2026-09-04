@@ -13,6 +13,7 @@ import {
   CloudOff,
   RefreshCw,
   Share2,
+  Eye,
 } from 'lucide-react';
 
 interface GanttHeaderProps {
@@ -32,6 +33,7 @@ interface GanttHeaderProps {
   cloudStatus?: 'synced' | 'saving' | 'offline' | 'error';
   lastSavedTime?: string | null;
   onShareLink?: () => void;
+  readOnly?: boolean;
 }
 
 export const GanttHeader: React.FC<GanttHeaderProps> = ({
@@ -51,6 +53,7 @@ export const GanttHeader: React.FC<GanttHeaderProps> = ({
   cloudStatus = 'synced',
   lastSavedTime,
   onShareLink,
+  readOnly = false,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -84,16 +87,33 @@ export const GanttHeader: React.FC<GanttHeaderProps> = ({
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="text"
-                value={projectName}
-                onChange={(e) => onProjectNameChange(e.target.value)}
-                className="text-lg font-bold text-slate-900 tracking-tight border-b border-transparent hover:border-slate-300 focus:border-indigo-600 focus:outline-hidden px-1 -ml-1 rounded transition-colors"
-                placeholder="Nombre del Proyecto"
-              />
+              {readOnly ? (
+                <span className="text-lg font-bold text-slate-900 tracking-tight px-1 -ml-1 select-text">
+                  {projectName}
+                </span>
+              ) : (
+                <input
+                  type="text"
+                  value={projectName}
+                  onChange={(e) => onProjectNameChange(e.target.value)}
+                  className="text-lg font-bold text-slate-900 tracking-tight border-b border-transparent hover:border-slate-300 focus:border-indigo-600 focus:outline-hidden px-1 -ml-1 rounded transition-colors"
+                  placeholder="Nombre del Proyecto"
+                />
+              )}
+
+              {/* Read-Only Badge */}
+              {readOnly && (
+                <span
+                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-full shadow-2xs"
+                  title="Modo de solo lectura: Consulta en tiempo real sin permisos de edición"
+                >
+                  <Eye className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Solo Consulta</span>
+                </span>
+              )}
 
               {/* Cloud Synchronization Status Badge */}
-              {cloudStatus === 'saving' && (
+              {!readOnly && cloudStatus === 'saving' && (
                 <span
                   className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full animate-pulse"
                   title="Guardando cambios en la base de datos de Firebase..."
@@ -109,7 +129,7 @@ export const GanttHeader: React.FC<GanttHeaderProps> = ({
                   title={`Sincronizado en tiempo real en la nube con Firebase.${lastSavedTime ? ' Última actualización: ' + lastSavedTime : ''}`}
                 >
                   <Cloud className="w-3 h-3 text-emerald-600" />
-                  <span>Nube activa</span>
+                  <span>{readOnly ? 'En vivo' : 'Nube activa'}</span>
                 </span>
               )}
 
@@ -134,7 +154,9 @@ export const GanttHeader: React.FC<GanttHeaderProps> = ({
               )}
             </div>
             <p className="text-xs text-slate-500 px-1">
-              Plazos diarios con dependencias automáticas, base de datos en tiempo real y exportación
+              {readOnly
+                ? 'Visualización en tiempo real del cronograma con exportación a Excel disponible'
+                : 'Plazos diarios con dependencias automáticas, base de datos en tiempo real y exportación'}
             </p>
           </div>
         </div>
@@ -144,42 +166,52 @@ export const GanttHeader: React.FC<GanttHeaderProps> = ({
           {/* Total Days control */}
           <div className="flex items-center bg-slate-50 rounded-md p-1 border border-slate-200 text-xs">
             <span className="text-slate-500 px-1.5 font-medium">Plazo:</span>
-            <button
-              onClick={() => onTotalDaysChange(Math.max(5, totalDays - 1))}
-              className="p-1 text-slate-600 hover:text-slate-900 hover:bg-white rounded transition-colors disabled:opacity-30"
-              disabled={totalDays <= 5}
-              title="Reducir 1 día"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
+            {!readOnly && (
+              <button
+                onClick={() => onTotalDaysChange(Math.max(5, totalDays - 1))}
+                className="p-1 text-slate-600 hover:text-slate-900 hover:bg-white rounded transition-colors disabled:opacity-30"
+                disabled={totalDays <= 5}
+                title="Reducir 1 día"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+            )}
             <span className="px-2 font-bold text-slate-800 min-w-[48px] text-center">
               {totalDays} días
             </span>
-            <button
-              onClick={() => onTotalDaysChange(Math.min(60, totalDays + 1))}
-              className="p-1 text-slate-600 hover:text-slate-900 hover:bg-white rounded transition-colors disabled:opacity-30"
-              disabled={totalDays >= 60}
-              title="Añadir 1 día"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+            {!readOnly && (
+              <button
+                onClick={() => onTotalDaysChange(Math.min(60, totalDays + 1))}
+                className="p-1 text-slate-600 hover:text-slate-900 hover:bg-white rounded transition-colors disabled:opacity-30"
+                disabled={totalDays >= 60}
+                title="Añadir 1 día"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Current Day selector */}
           <div className="flex items-center bg-slate-50 rounded-md p-1 border border-slate-200 text-xs">
             <span className="text-slate-500 px-1.5 font-medium">Hoy:</span>
-            <select
-              value={currentDay || ''}
-              onChange={(e) => onCurrentDayChange(e.target.value ? parseInt(e.target.value) : null)}
-              className="bg-white border border-slate-200 text-slate-800 text-xs rounded px-2 py-0.5 font-semibold focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="">Sin marcar</option>
-              {Array.from({ length: totalDays }, (_, i) => i + 1).map((d) => (
-                <option key={d} value={d}>
-                  Día {d}
-                </option>
-              ))}
-            </select>
+            {readOnly ? (
+              <span className="px-2 py-0.5 font-semibold text-slate-800">
+                {currentDay ? `Día ${currentDay}` : 'Sin marcar'}
+              </span>
+            ) : (
+              <select
+                value={currentDay || ''}
+                onChange={(e) => onCurrentDayChange(e.target.value ? parseInt(e.target.value) : null)}
+                className="bg-white border border-slate-200 text-slate-800 text-xs rounded px-2 py-0.5 font-semibold focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="">Sin marcar</option>
+                {Array.from({ length: totalDays }, (_, i) => i + 1).map((d) => (
+                  <option key={d} value={d}>
+                    Día {d}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Zoom Level */}
@@ -221,42 +253,46 @@ export const GanttHeader: React.FC<GanttHeaderProps> = ({
 
           {/* Persistence / File Management (Guardar y Cargar Proyecto) */}
           <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
-            {/* Guardar Proyecto JSON */}
-            <button
-              onClick={onSaveProject}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-xs font-semibold transition-colors shadow-2xs"
-              title="Guardar archivo de proyecto (.json) en tu equipo para respaldar y no perder datos"
-            >
-              <Save className="w-3.5 h-3.5 text-slate-600" />
-              <span className="hidden lg:inline">Guardar</span>
-            </button>
+            {!readOnly && (
+              <>
+                {/* Guardar Proyecto JSON */}
+                <button
+                  onClick={onSaveProject}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-xs font-semibold transition-colors shadow-2xs"
+                  title="Guardar archivo de proyecto (.json) en tu equipo para respaldar y no perder datos"
+                >
+                  <Save className="w-3.5 h-3.5 text-slate-600" />
+                  <span className="hidden lg:inline">Guardar</span>
+                </button>
 
-            {/* Cargar Proyecto JSON */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-xs font-semibold transition-colors shadow-2xs"
-              title="Cargar y abrir un archivo de proyecto (.json) guardado previamente"
-            >
-              <FolderOpen className="w-3.5 h-3.5 text-slate-600" />
-              <span className="hidden lg:inline">Cargar</span>
-            </button>
+                {/* Cargar Proyecto JSON */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-xs font-semibold transition-colors shadow-2xs"
+                  title="Cargar y abrir un archivo de proyecto (.json) guardado previamente"
+                >
+                  <FolderOpen className="w-3.5 h-3.5 text-slate-600" />
+                  <span className="hidden lg:inline">Cargar</span>
+                </button>
+              </>
+            )}
 
-            {/* Descargar en Excel */}
+            {/* Descargar en Excel - Siempre disponible */}
             <button
               onClick={onExportExcel}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold transition-colors shadow-2xs active:scale-98"
               title="Descargar cronograma Gantt en formato Excel (.xlsx)"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span className="hidden sm:inline">Excel</span>
+              <span>Excel</span>
             </button>
 
-            {/* Compartir enlace colaborativo */}
+            {/* Compartir enlace de consulta */}
             {onShareLink && (
               <button
                 onClick={onShareLink}
                 className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md text-xs font-semibold transition-colors shadow-2xs"
-                title="Copiar enlace para compartir y editar juntos en tiempo real"
+                title="Copiar enlace de solo lectura para compartir este cronograma"
               >
                 <Share2 className="w-3.5 h-3.5 text-indigo-600" />
                 <span className="hidden sm:inline">Compartir</span>
@@ -272,24 +308,28 @@ export const GanttHeader: React.FC<GanttHeaderProps> = ({
               <Printer className="w-4 h-4" />
             </button>
 
-            {/* Reset */}
-            <button
-              onClick={onResetData}
-              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
-              title="Restablecer plantilla inicial"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
+            {/* Reset - Solo en modo edición */}
+            {!readOnly && (
+              <button
+                onClick={onResetData}
+                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                title="Restablecer plantilla inicial"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
-          {/* Nueva Tarea Primary Button */}
-          <button
-            onClick={onAddTask}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-md shadow-sm hover:bg-indigo-700 transition-colors active:scale-98 shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nueva Actividad</span>
-          </button>
+          {/* Nueva Tarea Primary Button - Solo en modo edición */}
+          {!readOnly && (
+            <button
+              onClick={onAddTask}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-md shadow-sm hover:bg-indigo-700 transition-colors active:scale-98 shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nueva Actividad</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

@@ -12,12 +12,32 @@ import {
   saveProjectToCloud,
   ensureAuth,
 } from './firebase';
+import { Eye, FileSpreadsheet } from 'lucide-react';
 
 const STORAGE_KEY_TASKS = 'gantt_activities_tasks';
 const STORAGE_KEY_CONFIG = 'gantt_activities_config';
 
+function checkIsReadOnly(): boolean {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    const view = params.get('view');
+    const readonlyParam = params.get('readonly');
+    return (
+      mode === 'readonly' ||
+      mode === 'view' ||
+      view === 'readonly' ||
+      readonlyParam === 'true' ||
+      readonlyParam === '1'
+    );
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const projectId = getActiveProjectId();
+  const isReadOnly = checkIsReadOnly();
 
   // Initialize tasks from localStorage or default
   const [tasks, setTasks] = useState<Task[]>(() => {
@@ -185,7 +205,7 @@ export default function App() {
   // Flush any pending save before closing the window/tab
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (isInitialCloudLoaded.current && saveTimeoutRef.current) {
+      if (!isReadOnly && isInitialCloudLoaded.current && saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
         saveProjectToCloud(projectId, {
           projectName,
@@ -198,11 +218,11 @@ export default function App() {
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [projectId, projectName, totalDays, currentDay, tasks]);
+  }, [projectId, projectName, totalDays, currentDay, tasks, isReadOnly]);
 
-  // Automatically sync user modifications to Firestore
+  // Automatically sync user modifications to Firestore (disabled in read-only mode)
   useEffect(() => {
-    if (!isInitialCloudLoaded.current) {
+    if (isReadOnly || !isInitialCloudLoaded.current) {
       return;
     }
 
@@ -246,20 +266,23 @@ export default function App() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [tasks, projectName, totalDays, currentDay, projectId]);
+  }, [tasks, projectName, totalDays, currentDay, projectId, isReadOnly]);
 
-  // Handlers
+  // Handlers (guarded against read-only mode)
   const handleAddTask = () => {
+    if (isReadOnly) return;
     setEditingTask(null);
     setIsModalOpen(true);
   };
 
   const handleEditTask = (task: Task) => {
+    if (isReadOnly) return;
     setEditingTask(task);
     setIsModalOpen(true);
   };
 
   const handleSaveTask = (taskData: Omit<Task, 'id'> & { id?: string }) => {
+    if (isReadOnly) return;
     let updatedTasks: Task[];
     if (taskData.id) {
       // Update existing
@@ -286,6 +309,7 @@ export default function App() {
   };
 
   const handleUpdateTask = (updatedTask: Task) => {
+    if (isReadOnly) return;
     const updated = tasks.map((t) => (t.id === updatedTask.id ? updatedTask : t));
     const recalculated = recalculateDependencies(updated);
     setTasks(recalculated);
@@ -297,6 +321,7 @@ export default function App() {
   };
 
   const handleDeleteTask = (taskId: string) => {
+    if (isReadOnly) return;
     // When deleting a task, clear dependsOn for tasks that depended on it
     const filtered = tasks
       .filter((t) => t.id !== taskId)
@@ -305,6 +330,7 @@ export default function App() {
   };
 
   const handleDuplicateTask = (task: Task) => {
+    if (isReadOnly) return;
     const newTask: Task = {
       ...task,
       id: `task-${Date.now()}`,
@@ -316,10 +342,12 @@ export default function App() {
   };
 
   const handleReorderTasks = (newTasks: Task[]) => {
+    if (isReadOnly) return;
     setTasks(newTasks);
   };
 
   const handleResetData = () => {
+    if (isReadOnly) return;
     if (window.confirm('¿Deseas restablecer el cronograma con las actividades predeterminadas?')) {
       const reset = recalculateDependencies(INITIAL_TASKS);
       setTasks(reset);
@@ -352,6 +380,7 @@ export default function App() {
 
   // Guardar archivo de proyecto en JSON descargable y forzar guardado en la nube
   const handleSaveProject = async () => {
+    if (isReadOnly) return;
     try {
       setCloudStatus('saving');
       // Forzar guardado inmediato en Firebase Firestore
@@ -400,6 +429,7 @@ export default function App() {
 
   // Cargar archivo de proyecto desde JSON
   const handleLoadProject = (file: File) => {
+    if (isReadOnly) return;
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
@@ -451,13 +481,15 @@ export default function App() {
     try {
       const currentUrl = new URL(window.location.href);
       currentUrl.searchParams.set('project', projectId);
+      // Link compartido para modo consulta (no editable)
+      currentUrl.searchParams.set('mode', 'readonly');
       const url = currentUrl.toString();
 
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url);
-        showNotification('¡Enlace único del proyecto copiado! Todos los que accedan verán y modificarán la misma información.');
+        showNotification('¡Enlace de solo lectura copiado! Quien ingrese podrá consultar el cronograma en tiempo real y exportar a Excel sin modificar.');
       } else {
-        window.prompt('Copia este enlace para compartir el cronograma colaborativo:', url);
+        window.prompt('Copia este enlace para compartir el cronograma en modo consulta (solo lectura):', url);
       }
     } catch (err) {
       console.error('Error copying link:', err);
@@ -514,7 +546,30 @@ export default function App() {
         cloudStatus={cloudStatus}
         lastSavedTime={lastSavedTime}
         onShareLink={handleShareLink}
+        readOnly={isReadOnly}
       />
+
+      {/* Read-Only Informative Banner */}
+      {isReadOnly && (
+        <div className="bg-amber-50/90 border-b border-amber-200 px-4 sm:px-6 py-2 flex items-center justify-between text-xs text-amber-900 shrink-0">
+          <div className="max-w-7xl mx-auto w-full flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Eye className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>
+                <strong>Modo de Consulta:</strong> Estás viendo este cronograma en tiempo real (modo no editable). Puedes explorar las actividades y descargar la información en Excel.
+              </span>
+            </div>
+            <button
+              onClick={handleExportExcel}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 px-3 py-1 rounded transition-colors shadow-2xs self-start sm:self-auto shrink-0"
+              title="Generar y descargar archivo Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Generar Excel</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Gantt Interactive Board */}
       <GanttChart
@@ -527,17 +582,20 @@ export default function App() {
         onDuplicateTask={handleDuplicateTask}
         onEditTask={handleEditTask}
         onReorderTasks={handleReorderTasks}
+        readOnly={isReadOnly}
       />
 
-      {/* Task Creation & Editing Modal */}
-      <TaskModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveTask}
-        initialTask={editingTask}
-        totalDays={totalDays}
-        allTasks={tasks}
-      />
+      {/* Task Creation & Editing Modal (only in edit mode) */}
+      {!isReadOnly && (
+        <TaskModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSave={handleSaveTask}
+          initialTask={editingTask}
+          totalDays={totalDays}
+          allTasks={tasks}
+        />
+      )}
     </div>
   );
 }
