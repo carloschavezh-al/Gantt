@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
+  initializeFirestore,
   getFirestore,
   doc,
   onSnapshot,
@@ -17,18 +18,37 @@ export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getA
 // Initialize Auth
 export const auth: Auth = getAuth(app);
 
-// Initialize Firestore with custom databaseId if configured
-export const db: Firestore = firebaseConfig.firestoreDatabaseId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+// Initialize Firestore with force long polling enabled to prevent WebChannel stream
+// connection drops in sandboxed iframe / Cloud Run proxy environments.
+export const db: Firestore = (() => {
+  try {
+    return initializeFirestore(
+      app,
+      {
+        experimentalForceLongPolling: true,
+      },
+      firebaseConfig.firestoreDatabaseId || undefined
+    );
+  } catch {
+    // Fallback if already initialized
+    return firebaseConfig.firestoreDatabaseId
+      ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+      : getFirestore(app);
+  }
+})();
 
-// Test connection on boot as recommended by Firebase instructions
+// Test connection on boot as recommended by Firebase instructions, safely handling initial offline states
 (async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client appears offline:', error.message);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const code = (error as { code?: string })?.code;
+    if (code === 'unavailable' || msg.includes('offline') || msg.includes('could not be completed')) {
+      // Safe offline/connection-delay handling - client will use cache and sync when online
+      console.info('[Firebase] Operating in resilient offline-sync mode until connection is confirmed.');
+    } else {
+      console.warn('[Firebase] Connection check info:', msg);
     }
   }
 })();
@@ -116,6 +136,58 @@ export function sanitizeTask(task: Task): Task {
   return clean as Task;
 }
 
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
 /**
  * Listen to realtime updates on a project
  */
@@ -124,6 +196,7 @@ export function subscribeToProject(
   onUpdate: (data: CloudProjectData | null) => void,
   onError?: (err: Error) => void
 ) {
+  const path = `projects/${projectId}`;
   const projectRef = doc(db, 'projects', projectId);
 
   return onSnapshot(
@@ -146,7 +219,13 @@ export function subscribeToProject(
       }
     },
     (error) => {
-      console.error(`[Firebase] Error subscribing to project "${projectId}":`, error);
+      const msg = error?.message || String(error);
+      const code = (error as { code?: string })?.code;
+      if (code === 'unavailable' || msg.includes('offline') || msg.includes('could not be completed')) {
+        console.warn(`[Firebase] Offline or connecting to "${path}". Using local data.`);
+      } else {
+        console.error(`[Firebase] Error subscribing to project "${path}":`, error);
+      }
       if (onError) onError(error);
     }
   );
@@ -159,19 +238,30 @@ export async function saveProjectToCloud(
   projectId: string,
   data: Omit<CloudProjectData, 'updatedAt'>
 ): Promise<void> {
-  const projectRef = doc(db, 'projects', projectId);
-  const currentUser = auth.currentUser;
+  const path = `projects/${projectId}`;
+  try {
+    const projectRef = doc(db, 'projects', projectId);
+    const currentUser = auth.currentUser;
 
-  const sanitizedTasks = (data.tasks || []).map(sanitizeTask);
+    const sanitizedTasks = (data.tasks || []).map(sanitizeTask);
 
-  const payload: CloudProjectData = {
-    projectName: data.projectName || 'Cronograma de Actividades',
-    totalDays: Number(data.totalDays) || 30,
-    currentDay: typeof data.currentDay === 'number' ? data.currentDay : null,
-    tasks: sanitizedTasks,
-    updatedAt: new Date().toISOString(),
-    lastEditedBy: currentUser ? currentUser.uid.substring(0, 6) : getCollaboratorId(),
-  };
+    const payload: CloudProjectData = {
+      projectName: data.projectName || 'Cronograma de Actividades',
+      totalDays: Number(data.totalDays) || 30,
+      currentDay: typeof data.currentDay === 'number' ? data.currentDay : null,
+      tasks: sanitizedTasks,
+      updatedAt: new Date().toISOString(),
+      lastEditedBy: currentUser ? currentUser.uid.substring(0, 6) : getCollaboratorId(),
+    };
 
-  await setDoc(projectRef, payload);
+    await setDoc(projectRef, payload);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const code = (error as { code?: string })?.code;
+    if (code === 'unavailable' || msg.includes('offline') || msg.includes('could not be completed')) {
+      console.warn(`[Firebase] Write deferred while offline for "${path}".`);
+      return;
+    }
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
 }

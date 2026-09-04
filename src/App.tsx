@@ -123,9 +123,17 @@ export default function App() {
     }
   }, [projectName, totalDays, currentDay]);
 
-  // Subscribe to Firebase Firestore real-time updates
+  // Subscribe to Firebase Firestore real-time updates with offline fallback
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let isSubscribed = true;
+
+    // Safety timeout: If connection is slow or offline, reveal UI with local cache after 1.5s
+    const offlineFallbackTimer = setTimeout(() => {
+      if (isSubscribed) {
+        setIsInitialLoading(false);
+      }
+    }, 1500);
 
     async function initCloud() {
       try {
@@ -135,6 +143,9 @@ export default function App() {
         unsubscribe = subscribeToProject(
           projectId,
           (cloudData) => {
+            clearTimeout(offlineFallbackTimer);
+            if (!isSubscribed) return;
+
             if (cloudData !== null) {
               // Existing shared project in Firestore
               const serialized = JSON.stringify({
@@ -169,28 +180,52 @@ export default function App() {
               };
               saveProjectToCloud(projectId, initialPayload)
                 .then(() => {
+                  if (!isSubscribed) return;
                   lastSyncedJson.current = JSON.stringify(initialPayload);
                   isInitialCloudLoaded.current = true;
                   setCloudStatus('synced');
                   setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
                   setIsInitialLoading(false);
                 })
-                .catch((err) => {
-                  console.error('Error creating initial project on Firebase:', err);
-                  setCloudStatus('error');
+                .catch((err: unknown) => {
+                  if (!isSubscribed) return;
+                  const msg = err instanceof Error ? err.message : String(err);
+                  const code = (err as { code?: string })?.code;
+                  if (code === 'unavailable' || msg.includes('offline') || msg.includes('could not be completed')) {
+                    setCloudStatus('offline');
+                  } else {
+                    console.error('Error creating initial project on Firebase:', err);
+                    setCloudStatus('error');
+                  }
                   setIsInitialLoading(false);
                 });
             }
           },
-          (err) => {
-            console.error('Firebase subscription error:', err);
-            setCloudStatus('error');
+          (err: unknown) => {
+            clearTimeout(offlineFallbackTimer);
+            if (!isSubscribed) return;
+            const msg = err instanceof Error ? err.message : String(err);
+            const code = (err as { code?: string })?.code;
+            if (code === 'unavailable' || msg.includes('offline') || msg.includes('could not be completed')) {
+              setCloudStatus('offline');
+            } else {
+              console.error('Firebase subscription error:', err);
+              setCloudStatus('error');
+            }
             setIsInitialLoading(false);
           }
         );
-      } catch (err) {
-        console.error('Failed to initialize Firebase Auth/Firestore:', err);
-        setCloudStatus('error');
+      } catch (err: unknown) {
+        clearTimeout(offlineFallbackTimer);
+        if (!isSubscribed) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        const code = (err as { code?: string })?.code;
+        if (code === 'unavailable' || msg.includes('offline') || msg.includes('could not be completed')) {
+          setCloudStatus('offline');
+        } else {
+          console.error('Failed to initialize Firebase Auth/Firestore:', err);
+          setCloudStatus('error');
+        }
         setIsInitialLoading(false);
       }
     }
@@ -198,6 +233,8 @@ export default function App() {
     initCloud();
 
     return () => {
+      isSubscribed = false;
+      clearTimeout(offlineFallbackTimer);
       if (unsubscribe) unsubscribe();
     };
   }, [projectId]);
@@ -255,9 +292,15 @@ export default function App() {
         lastSyncedJson.current = currentJson;
         setCloudStatus('synced');
         setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-      } catch (err) {
-        console.error('Error saving to Firebase Firestore:', err);
-        setCloudStatus('error');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const code = (err as { code?: string })?.code;
+        if (code === 'unavailable' || msg.includes('offline') || msg.includes('could not be completed')) {
+          setCloudStatus('offline');
+        } else {
+          console.error('Error saving to Firebase Firestore:', err);
+          setCloudStatus('error');
+        }
       }
     }, 500);
 

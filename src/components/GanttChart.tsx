@@ -81,11 +81,11 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     onReorderTasks(newTasks);
   };
 
-  // Synchronized scroll refs
-  const headerScrollRef = useRef<HTMLDivElement>(null);
-  const gridScrollRef = useRef<HTMLDivElement>(null);
+  // Ref for the unified Gantt scroll container and left column measurement
   const timelineContainerRef = useRef<HTMLDivElement>(null);
+  const leftColRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState<number>(0);
+  const [leftColWidth, setLeftColWidth] = useState<number>(360);
 
   // Measure visible timeline area with ResizeObserver to fit the chart to the screen
   useEffect(() => {
@@ -118,14 +118,29 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     };
   }, []);
 
+  // Measure left column width to accurately distribute timeline days
+  useEffect(() => {
+    const el = leftColRef.current;
+    if (!el) return;
+    const update = () => {
+      if (el.offsetWidth > 0) {
+        setLeftColWidth(el.offsetWidth);
+      }
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Column width dynamically calculated to fit the registered Plazo (totalDays) to the screen
   const colWidth = useMemo(() => {
     const days = Math.max(1, totalDays);
     const availableWidth =
       containerWidth > 0
-        ? containerWidth
+        ? Math.max(260, containerWidth - leftColWidth)
         : typeof window !== 'undefined'
-        ? Math.max(500, window.innerWidth - 460)
+        ? Math.max(260, window.innerWidth - leftColWidth)
         : 800;
 
     const naturalFitWidth = availableWidth / days;
@@ -144,7 +159,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     // Default 'normal': auto-fit to 100% of the visible container width!
     // If totalDays is high and naturalFitWidth < minColWidth, clamp to minColWidth and enable smooth scroll.
     return Math.max(minColWidth, naturalFitWidth);
-  }, [totalDays, containerWidth, zoom]);
+  }, [totalDays, containerWidth, leftColWidth, zoom]);
 
   const rowHeight = 52; // Height in px for both tables
 
@@ -158,14 +173,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     currentStartDay: number;
     currentDuration: number;
   } | null>(null);
-
-  const syncScroll = (source: 'grid' | 'header') => {
-    if (source === 'grid' && headerScrollRef.current && gridScrollRef.current) {
-      headerScrollRef.current.scrollLeft = gridScrollRef.current.scrollLeft;
-    } else if (source === 'header' && headerScrollRef.current && gridScrollRef.current) {
-      gridScrollRef.current.scrollLeft = headerScrollRef.current.scrollLeft;
-    }
-  };
 
   // Categories list
   const categories = Array.from(new Set(tasks.map((t) => t.category).filter(Boolean)));
@@ -539,40 +546,96 @@ export const GanttChart: React.FC<GanttChartProps> = ({
         </div>
       </div>
 
-      {/* Main Gantt Grid: Split Layout */}
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Left Side: Task List (Activities on the left) */}
-        <div className="w-[340px] sm:w-[400px] lg:w-[460px] shrink-0 border-r border-slate-200 flex flex-col bg-white z-20 shadow-2xs">
-          {/* Left Header */}
-          <div className="h-[48px] bg-slate-50/70 border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between text-xs font-bold text-slate-600 uppercase tracking-wider shrink-0">
-            <span className="flex items-center gap-1.5">
-              <span>Actividades / Tareas</span>
-              <span className="text-[10px] text-slate-400 font-normal">
-                ({filteredTasks.length})
-              </span>
+      {/* Banner when a task is cut */}
+      {cutTaskId && (
+        <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 truncate">
+            <Scissors className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span className="truncate">
+              Cortada: <strong>{tasks.find((t) => t.id === cutTaskId)?.name}</strong>
             </span>
           </div>
+          <button
+            onClick={() => setCutTaskId(null)}
+            className="text-[11px] underline text-amber-700 hover:text-amber-900 shrink-0 font-medium"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
 
-          {/* Banner when a task is cut */}
-          {cutTaskId && (
-            <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 truncate">
-                <Scissors className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span className="truncate">
-                  Cortada: <strong>{tasks.find((t) => t.id === cutTaskId)?.name}</strong>
+      {/* Main Gantt Grid: Single Unified Scroll Container (moves both activities and timeline together vertically) */}
+      <div
+        ref={timelineContainerRef}
+        className="flex-1 overflow-auto bg-white relative select-none"
+      >
+        <div className="inline-flex flex-col min-w-full min-h-full">
+          {/* Unified Sticky Header Row */}
+          <div className="sticky top-0 z-30 flex bg-slate-50 border-b border-slate-200 shrink-0">
+            {/* Left Header: Sticky Top and Sticky Left */}
+            <div
+              ref={leftColRef}
+              className="sticky left-0 z-40 w-[260px] sm:w-[340px] lg:w-[420px] shrink-0 bg-slate-50 border-r border-slate-200 h-[48px] px-3 sm:px-5 flex items-center justify-between text-xs font-bold text-slate-600 uppercase tracking-wider shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"
+            >
+              <span className="flex items-center gap-1.5">
+                <span>Actividades / Tareas</span>
+                <span className="text-[10px] text-slate-400 font-normal">
+                  ({filteredTasks.length})
                 </span>
-              </div>
-              <button
-                onClick={() => setCutTaskId(null)}
-                className="text-[11px] underline text-amber-700 hover:text-amber-900 shrink-0 font-medium"
-              >
-                Cancelar
-              </button>
+              </span>
             </div>
-          )}
 
-          {/* Left Rows: Tasks */}
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+            {/* Days Header */}
+            <div
+              className="flex h-[48px] bg-slate-50/80 select-none shrink-0"
+              style={{ width: `${totalDays * colWidth}px` }}
+            >
+              {Array.from({ length: totalDays }, (_, i) => i + 1).map((day) => {
+                const isHoveredDay =
+                  hoveredDaysRange && day >= hoveredDaysRange.start && day <= hoveredDaysRange.end;
+                const isDayStart = hoveredDaysRange && day === hoveredDaysRange.start;
+                const isDayEnd = hoveredDaysRange && day === hoveredDaysRange.end;
+
+                return (
+                  <div
+                    key={day}
+                    style={{ width: `${colWidth}px` }}
+                    className={`h-full border-r flex flex-col items-center justify-center text-center shrink-0 transition-colors duration-150 ${
+                      isHoveredDay
+                        ? 'bg-slate-100/90 border-r-slate-200 border-b-2 border-b-slate-400'
+                        : 'border-slate-200/70 hover:bg-slate-100/50'
+                    }`}
+                  >
+                    <span
+                      className={`text-xs uppercase tracking-tight transition-colors ${
+                        isHoveredDay ? 'text-slate-900 font-bold' : 'text-slate-600 font-bold'
+                      }`}
+                    >
+                      {colWidth < 44 ? `${day}` : `Día ${day}`}
+                    </span>
+                    {isHoveredDay && (
+                      <span className="text-[9px] text-slate-500 font-semibold tracking-tighter leading-none mt-0.5">
+                        {hoveredDaysRange.isMilestone
+                          ? 'Hito'
+                          : isDayStart && isDayEnd
+                          ? '1 día'
+                          : isDayStart
+                          ? 'Inicio'
+                          : isDayEnd
+                          ? 'Fin'
+                          : 'Activo'}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Unified Body Rows: Left Tasks and Right Grid side by side */}
+          <div className="flex flex-1 relative">
+            {/* Left Side: Task List (Sticky Left) */}
+            <div className="sticky left-0 z-20 w-[260px] sm:w-[340px] lg:w-[420px] shrink-0 bg-white border-r border-slate-200 divide-y divide-slate-100 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
             {filteredTasks.length === 0 ? (
               <div className="p-8 text-center text-slate-400 text-xs">
                 No se encontraron actividades con ese criterio.
@@ -629,42 +692,25 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 
                       {/* Task status indicator or milestone diamond */}
                       {task.isMilestone ? (
-                        <span
-                          className="w-3 h-3 rotate-45 bg-amber-500 shrink-0 rounded-xs shadow-xs"
-                          title="Hito"
-                        />
+                        <span className="w-3 h-3 rotate-45 bg-amber-500 shrink-0 rounded-xs shadow-xs" />
                       ) : (
                         <span
                           className={`w-2.5 h-2.5 rounded-full shrink-0 ${colorConfig.bg}`}
                         />
                       )}
 
-                      {/* Task name and notes badge */}
+                      {/* Task name: clean description without badges or native title tooltip */}
                       <div
                         onClick={() => {
                           if (!readOnly) onEditTask(task);
                         }}
-                        className={`font-medium text-slate-900 break-words whitespace-normal leading-snug flex-1 min-w-0 text-xs sm:text-[13px] tracking-tight pr-1 flex items-center flex-wrap gap-1.5 ${
+                        className={`font-medium text-slate-900 break-words whitespace-normal leading-snug flex-1 min-w-0 text-xs sm:text-[13px] tracking-tight pr-1 ${
                           readOnly
                             ? 'cursor-default'
                             : 'hover:text-indigo-600 cursor-pointer'
                         }`}
-                        title={
-                          readOnly
-                            ? `${task.name}${task.notes ? `\n\nNotas adicionales:\n${task.notes}` : ''}`
-                            : "Clic para editar actividad"
-                        }
                       >
-                        <span>{task.name}</span>
-                        {task.notes && task.notes.trim().length > 0 && (
-                          <span
-                            className="inline-flex items-center gap-0.5 text-[10px] font-medium text-indigo-700 bg-indigo-50/90 border border-indigo-200/80 rounded px-1.5 py-0.2 shrink-0 shadow-2xs"
-                            title={`Notas adicionales:\n${task.notes}`}
-                          >
-                            <FileText className="w-2.5 h-2.5 text-indigo-600 shrink-0" />
-                            <span>Nota</span>
-                          </span>
-                        )}
+                        {task.name}
                       </div>
                     </div>
 
@@ -764,77 +810,13 @@ export const GanttChart: React.FC<GanttChartProps> = ({
               })
             )}
           </div>
-        </div>
 
-        {/* Right Side: Gantt Timeline Columns ("Día 1", "Día 2", ...) */}
-        <div
-          ref={timelineContainerRef}
-          className="flex-1 flex flex-col overflow-hidden bg-white min-w-0"
-        >
-          {/* Header row with Days */}
+          {/* Right Side: Gantt Timeline Columns & Bars */}
           <div
-            ref={headerScrollRef}
-            onScroll={() => syncScroll('header')}
-            className="h-[48px] bg-slate-50/70 border-b border-slate-200 overflow-x-auto overflow-y-hidden select-none shrink-0"
-            style={{ scrollbarWidth: 'none' }}
+            className="relative shrink-0"
+            style={{ width: `${totalDays * colWidth}px` }}
           >
-            <div
-              className="flex h-full relative"
-              style={{ width: `${totalDays * colWidth}px` }}
-            >
-              {Array.from({ length: totalDays }, (_, i) => i + 1).map((day) => {
-                const isHoveredDay =
-                  hoveredDaysRange && day >= hoveredDaysRange.start && day <= hoveredDaysRange.end;
-                const isDayStart = hoveredDaysRange && day === hoveredDaysRange.start;
-                const isDayEnd = hoveredDaysRange && day === hoveredDaysRange.end;
-
-                return (
-                  <div
-                    key={day}
-                    style={{ width: `${colWidth}px` }}
-                    className={`h-full border-r flex flex-col items-center justify-center text-center shrink-0 transition-colors duration-150 ${
-                      isHoveredDay
-                        ? 'bg-slate-100/90 border-r-slate-200 border-b-2 border-b-slate-400'
-                        : 'border-slate-200/70 hover:bg-slate-100/50'
-                    }`}
-                  >
-                    <span
-                      className={`text-xs uppercase tracking-tight transition-colors ${
-                        isHoveredDay ? 'text-slate-900 font-bold' : 'text-slate-600 font-bold'
-                      }`}
-                    >
-                      {colWidth < 44 ? `${day}` : `Día ${day}`}
-                    </span>
-                    {isHoveredDay && (
-                      <span className="text-[9px] text-slate-500 font-semibold tracking-tighter leading-none mt-0.5">
-                        {hoveredDaysRange.isMilestone
-                          ? 'Hito'
-                          : isDayStart && isDayEnd
-                          ? '1 día'
-                          : isDayStart
-                          ? 'Inicio'
-                          : isDayEnd
-                          ? 'Fin'
-                          : 'Activo'}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Grid Rows with Gantt Bars */}
-          <div
-            ref={gridScrollRef}
-            onScroll={() => syncScroll('grid')}
-            className="flex-1 overflow-auto relative"
-          >
-            <div
-              className="relative min-h-full"
-              style={{ width: `${totalDays * colWidth}px` }}
-            >
-              {/* Background Column Grid Lines */}
+            {/* Background Column Grid Lines */}
               <div className="absolute inset-0 flex pointer-events-none">
                 {Array.from({ length: totalDays }, (_, i) => i + 1).map((day) => {
                   return (
@@ -1062,13 +1044,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                           className={`absolute z-10 group/milestone flex items-center justify-center transition-transform ${
                             readOnly ? 'cursor-default' : 'cursor-move hover:scale-110'
                           }`}
-                          title={
-                            readOnly
-                              ? `Hito: ${task.name} (Día ${activeStartDay})${
-                                  task.notes ? `\n\nNotas adicionales:\n${task.notes}` : ''
-                                }`
-                              : `Hito: ${task.name} (Día ${activeStartDay}) - Arrastra para mover o doble clic para editar`
-                          }
                         >
                           <div className="w-7 h-7 rotate-45 bg-amber-500 border-2 border-white/40 rounded-xs shadow-xs flex items-center justify-center">
                             <Sparkles className="w-3.5 h-3.5 text-white -rotate-45" />
@@ -1097,13 +1072,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                               ? 'ring-2 ring-slate-600 ring-offset-1 scale-[1.01] shadow-md opacity-90'
                               : ''
                           }`}
-                          title={
-                            readOnly
-                              ? `${task.name}: Día ${activeStartDay} a Día ${endDay} (${activeDuration} días)${
-                                  task.notes ? `\n\nNotas adicionales:\n${task.notes}` : ''
-                                }`
-                              : `${task.name}: Día ${activeStartDay} a Día ${endDay} (${activeDuration} días). Arrastra para mover o doble clic para editar.`
-                          }
                         >
                           {/* Left resize handle - only when not readOnly */}
                           {!readOnly && (
@@ -1159,25 +1127,16 @@ export const GanttChart: React.FC<GanttChartProps> = ({
           }}
         >
           <div className="w-80 sm:w-84 rounded-xl bg-slate-900/95 text-white p-3.5 shadow-2xl border border-slate-700/80 backdrop-blur-md animate-in fade-in-0 zoom-in-95 duration-100">
-            {/* Top category & timing */}
+            {/* Top timing and milestone badge (no category) */}
             <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-1.5 min-w-0">
-                {notesTooltip.task.isMilestone ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-950/80 border border-amber-500/40 px-2 py-0.5 rounded-full shrink-0">
-                    <Sparkles className="w-3 h-3 text-amber-400" />
-                    <span>Hito</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-300 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full truncate shrink-0">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        TASK_COLORS[notesTooltip.task.color]?.bg || 'bg-indigo-500'
-                      }`}
-                    />
-                    <span>{notesTooltip.task.category}</span>
-                  </span>
-                )}
-              </div>
+              {notesTooltip.task.isMilestone ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-950/80 border border-amber-500/40 px-2 py-0.5 rounded-full shrink-0">
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span>Hito</span>
+                </span>
+              ) : (
+                <span className="text-[10px] font-medium text-slate-400">Detalles de Actividad</span>
+              )}
               <span className="text-[10px] font-semibold text-indigo-300 shrink-0">
                 {notesTooltip.task.isMilestone
                   ? `Día ${notesTooltip.task.startDay}`
@@ -1192,7 +1151,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
               {notesTooltip.task.name}
             </h4>
 
-            {/* Quick Metadata */}
+            {/* Quick Metadata (Assignee, Duration - no progress) */}
             <div className="flex flex-wrap items-center gap-1.5 mb-2.5 text-[10px] text-slate-300">
               {notesTooltip.task.assignee && (
                 <span className="inline-flex items-center gap-1 bg-slate-800/90 px-2 py-0.5 rounded border border-slate-700/60">
@@ -1207,11 +1166,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                   {notesTooltip.task.duration === 1 ? 'día' : 'días'}
                 </span>
               </span>
-              {notesTooltip.task.progress > 0 && (
-                <span className="inline-flex items-center gap-1 bg-slate-800/90 px-2 py-0.5 rounded border border-slate-700/60">
-                  <span>Progreso: {notesTooltip.task.progress}%</span>
-                </span>
-              )}
             </div>
 
             {/* Notas Adicionales Section */}
