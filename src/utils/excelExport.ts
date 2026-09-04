@@ -30,11 +30,8 @@ export function exportGanttToExcel(
   const headers = [
     'N°',
     'Actividad',
-    'Fase',
-    'Inicio',
-    'Días',
-    'Fin',
     ...dayHeaders,
+    'Comentarios',
   ];
 
   // 3. Filas de actividades con representación gráfica directa
@@ -53,11 +50,8 @@ export function exportGanttToExcel(
     return [
       idx + 1,
       task.name,
-      task.category || 'General',
-      `Día ${task.startDay}`,
-      task.isMilestone ? 'Hito' : `${task.duration} d`,
-      `Día ${endDay}`,
       ...timelineCells,
+      task.notes || '',
     ];
   });
 
@@ -65,10 +59,6 @@ export function exportGanttToExcel(
   const legendRow = [
     '',
     'Leyenda:  ■ Actividad en curso   |   ◆ Hito',
-    '',
-    '',
-    '',
-    '',
   ];
 
   // 5. Construcción de la hoja de cálculo
@@ -85,29 +75,26 @@ export function exportGanttToExcel(
   const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
 
   // 6. Configuración de anchos de columna:
-  // Columnas de datos legibles + columnas de días compactas tipo Gantt
+  // N° y Actividad + columnas de días + Comentarios
   const infoColWidths = [
     { wch: 5 },  // N°
-    { wch: 38 }, // Actividad
-    { wch: 20 }, // Fase
-    { wch: 10 }, // Inicio
-    { wch: 9 },  // Días
-    { wch: 10 }, // Fin
+    { wch: 42 }, // Actividad
   ];
 
   // Ancho estrecho para las columnas de días para que simule una cuadrícula visual de Gantt
   const timelineColWidths = Array.from({ length: totalDays }, () => ({ wch: 6 }));
-  worksheet['!cols'] = [...infoColWidths, ...timelineColWidths];
+  const commentsColWidth = [{ wch: 40 }]; // Comentarios (notas adicionales)
+  worksheet['!cols'] = [...infoColWidths, ...timelineColWidths, ...commentsColWidth];
 
   // 7. Combinar celdas del título para una presentación profesional
   const totalColumns = headers.length;
   worksheet['!merges'] = [
     // Título principal
-    { s: { r: 0, c: 0 }, e: { r: 0, c: Math.min(5, totalColumns - 1) } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: Math.min(6, totalColumns - 1) } },
     // Subtítulo
-    { s: { r: 1, c: 0 }, e: { r: 1, c: Math.min(5, totalColumns - 1) } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: Math.min(6, totalColumns - 1) } },
     // Leyenda
-    { s: { r: sheetData.length - 1, c: 1 }, e: { r: sheetData.length - 1, c: 4 } },
+    { s: { r: sheetData.length - 1, c: 1 }, e: { r: sheetData.length - 1, c: Math.min(totalColumns - 1, 4) } },
   ];
 
   // 8. Crear el libro de trabajo y descargar

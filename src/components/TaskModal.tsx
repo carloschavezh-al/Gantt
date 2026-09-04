@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Task } from '../types';
 import { TASK_COLORS, DEFAULT_CATEGORIES } from '../data/initialData';
-import { X, Calendar, User, Tag, Sparkles, Check, Link2, Info } from 'lucide-react';
+import { X, Calendar, User, Tag, Sparkles, Check, Link2 } from 'lucide-react';
 import { getValidPredecessors, getTaskEndDay } from '../utils/dependencyHelper';
 
 interface TaskModalProps {
@@ -93,7 +93,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   };
 
   const endDay = isMilestone ? startDay : startDay + Math.max(1, duration) - 1;
-  const selectedPredecessor = dependsOn ? allTasks.find((t) => t.id === dependsOn) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
@@ -190,7 +189,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           </div>
 
           {/* Dependencia de otra Actividad */}
-          <div className="bg-slate-50/80 border border-slate-200 rounded-md p-3.5 space-y-2">
+          <div className="bg-slate-50/80 border border-slate-200 rounded-md p-3 space-y-2">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
                 <Link2 className="w-4 h-4 text-indigo-600" />
@@ -215,19 +214,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 </option>
               ))}
             </select>
-
-            {selectedPredecessor ? (
-              <div className="flex items-start gap-1.5 text-[11px] text-indigo-800 bg-indigo-50/80 p-2 rounded border border-indigo-100">
-                <Info className="w-3.5 h-3.5 text-indigo-600 mt-0.5 shrink-0" />
-                <span>
-                  Esta actividad iniciará automáticamente el <strong>Día {startDay}</strong> (un día después de que finalice <em>"{selectedPredecessor.name}"</em>). Si actualizas el plazo de la predecesora, esta actividad se moverá automáticamente en el gráfico.
-                </span>
-              </div>
-            ) : (
-              <p className="text-[11px] text-slate-500">
-                Al vincular con una actividad predecesora, su día de inicio se ajustará automáticamente cuando cambie la duración o fecha de la otra.
-              </p>
-            )}
           </div>
 
           {/* Plazos de Días (Día de inicio y duración) */}
@@ -316,11 +302,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               Notas adicionales (opcional)
             </label>
             <textarea
-              rows={2}
+              rows={4}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Detalles sobre entregables, dependencias o criterios de aceptación..."
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md text-slate-900 text-xs focus:outline-hidden focus:ring-1 focus:ring-indigo-600"
+              className="w-full min-h-[90px] px-3 py-2 bg-white border border-slate-200 rounded-md text-slate-900 text-xs leading-relaxed focus:outline-hidden focus:ring-1 focus:ring-indigo-600 resize-y"
             />
           </div>
 
