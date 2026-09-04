@@ -16,6 +16,9 @@ import {
   MoveRight,
   PlusCircle,
   Link2,
+  FileText,
+  Calendar,
+  User,
 } from 'lucide-react';
 
 interface GanttChartProps {
@@ -52,6 +55,11 @@ export const GanttChart: React.FC<GanttChartProps> = ({
   const [cutTaskId, setCutTaskId] = useState<string | null>(null);
   const [hoveredLineId, setHoveredLineId] = useState<string | null>(null);
   const [showDependencies, setShowDependencies] = useState(true);
+  const [notesTooltip, setNotesTooltip] = useState<{
+    task: Task;
+    x: number;
+    y: number;
+  } | null>(null);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -171,6 +179,29 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     const matchesCategory = selectedCategory === 'ALL' || t.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
+
+  // Tooltip mouse handlers for task notes and details
+  const handleTaskMouseEnter = (task: Task, e: React.MouseEvent) => {
+    setHoveredTaskId(task.id);
+    if (!dragging) {
+      setNotesTooltip({ task, x: e.clientX, y: e.clientY });
+    }
+  };
+
+  const handleTaskMouseMove = (task: Task, e: React.MouseEvent) => {
+    if (!dragging) {
+      setNotesTooltip((prev) =>
+        prev && prev.task.id === task.id
+          ? { ...prev, x: e.clientX, y: e.clientY }
+          : { task, x: e.clientX, y: e.clientY }
+      );
+    }
+  };
+
+  const handleTaskMouseLeave = () => {
+    setHoveredTaskId(null);
+    setNotesTooltip(null);
+  };
 
   // Smooth orthogonal path generator with rounded corners
   const generateRoundedPath = (points: Array<{ x: number; y: number }>, r = 6): string => {
@@ -365,6 +396,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     if (readOnly) return;
     e.stopPropagation();
     e.preventDefault();
+    setNotesTooltip(null);
     setDragging({
       taskId: task.id,
       type,
@@ -557,8 +589,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                 return (
                   <div
                     key={task.id}
-                    onMouseEnter={() => setHoveredTaskId(task.id)}
-                    onMouseLeave={() => setHoveredTaskId(null)}
+                    onMouseEnter={(e) => handleTaskMouseEnter(task, e)}
+                    onMouseMove={(e) => handleTaskMouseMove(task, e)}
+                    onMouseLeave={handleTaskMouseLeave}
                     style={{ height: `${rowHeight}px` }}
                     className={`px-4 sm:px-6 flex items-center justify-between gap-2 text-xs transition-colors group ${
                       isCut
@@ -570,7 +603,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                         : 'bg-slate-50/40'
                     }`}
                   >
-                    {/* Left: Reorder buttons, Status indicator, Task Name */}
+                    {/* Left: Reorder buttons, Status indicator, Task Name & Note Badge */}
                     <div className="flex items-center gap-2.5 min-w-0 flex-1 py-1">
                       {/* Reorder arrows - solo en modo editable */}
                       {!readOnly && (
@@ -606,19 +639,32 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                         />
                       )}
 
-                      {/* Task name: fully visible with all available horizontal space, no truncate */}
+                      {/* Task name and notes badge */}
                       <div
                         onClick={() => {
                           if (!readOnly) onEditTask(task);
                         }}
-                        className={`font-medium text-slate-900 break-words whitespace-normal leading-snug flex-1 min-w-0 text-xs sm:text-[13px] tracking-tight pr-1 ${
+                        className={`font-medium text-slate-900 break-words whitespace-normal leading-snug flex-1 min-w-0 text-xs sm:text-[13px] tracking-tight pr-1 flex items-center flex-wrap gap-1.5 ${
                           readOnly
                             ? 'cursor-default'
                             : 'hover:text-indigo-600 cursor-pointer'
                         }`}
-                        title={readOnly ? undefined : "Clic para editar actividad"}
+                        title={
+                          readOnly
+                            ? `${task.name}${task.notes ? `\n\nNotas adicionales:\n${task.notes}` : ''}`
+                            : "Clic para editar actividad"
+                        }
                       >
-                        {task.name}
+                        <span>{task.name}</span>
+                        {task.notes && task.notes.trim().length > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 text-[10px] font-medium text-indigo-700 bg-indigo-50/90 border border-indigo-200/80 rounded px-1.5 py-0.2 shrink-0 shadow-2xs"
+                            title={`Notas adicionales:\n${task.notes}`}
+                          >
+                            <FileText className="w-2.5 h-2.5 text-indigo-600 shrink-0" />
+                            <span>Nota</span>
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -957,8 +1003,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                     <div
                       key={task.id}
                       style={{ height: `${rowHeight}px` }}
-                      onMouseEnter={() => setHoveredTaskId(task.id)}
-                      onMouseLeave={() => setHoveredTaskId(null)}
+                      onMouseEnter={(e) => handleTaskMouseEnter(task, e)}
+                      onMouseMove={(e) => handleTaskMouseMove(task, e)}
+                      onMouseLeave={handleTaskMouseLeave}
                       className={`relative flex items-center transition-colors ${
                         isHovered ? 'bg-slate-100/30' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/20'
                       }`}
@@ -1003,6 +1050,8 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                           style={{
                             left: `${(activeStartDay - 1) * colWidth + colWidth / 2 - 15}px`,
                           }}
+                          onMouseEnter={(e) => handleTaskMouseEnter(task, e)}
+                          onMouseMove={(e) => handleTaskMouseMove(task, e)}
                           onMouseDown={(e) => handleMouseDown(e, task, 'move')}
                           onDoubleClick={(e) => {
                             if (!readOnly) {
@@ -1015,7 +1064,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                           }`}
                           title={
                             readOnly
-                              ? `Hito: ${task.name} (Día ${activeStartDay})`
+                              ? `Hito: ${task.name} (Día ${activeStartDay})${
+                                  task.notes ? `\n\nNotas adicionales:\n${task.notes}` : ''
+                                }`
                               : `Hito: ${task.name} (Día ${activeStartDay}) - Arrastra para mover o doble clic para editar`
                           }
                         >
@@ -1030,6 +1081,8 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                             left: `${barLeft}px`,
                             width: `${barWidth}px`,
                           }}
+                          onMouseEnter={(e) => handleTaskMouseEnter(task, e)}
+                          onMouseMove={(e) => handleTaskMouseMove(task, e)}
                           onMouseDown={(e) => handleMouseDown(e, task, 'move')}
                           onDoubleClick={(e) => {
                             if (!readOnly) {
@@ -1046,7 +1099,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                           }`}
                           title={
                             readOnly
-                              ? `${task.name}: Día ${activeStartDay} a Día ${endDay} (${activeDuration} días)`
+                              ? `${task.name}: Día ${activeStartDay} a Día ${endDay} (${activeDuration} días)${
+                                  task.notes ? `\n\nNotas adicionales:\n${task.notes}` : ''
+                                }`
                               : `${task.name}: Día ${activeStartDay} a Día ${endDay} (${activeDuration} días). Arrastra para mover o doble clic para editar.`
                           }
                         >
@@ -1078,6 +1133,107 @@ export const GanttChart: React.FC<GanttChartProps> = ({
         </div>
       </div>
 
+      {/* Floating Activity Notes Tooltip (shows notes on hover over activities or chart) */}
+      {notesTooltip && !dragging && (
+        <div
+          className="fixed z-50 pointer-events-none transition-transform duration-75 select-none"
+          style={{
+            left: `${Math.max(
+              12,
+              Math.min(
+                typeof window !== 'undefined' ? window.innerWidth - 340 : 1000,
+                notesTooltip.x + 16 > (typeof window !== 'undefined' ? window.innerWidth - 340 : 1000)
+                  ? notesTooltip.x - 336
+                  : notesTooltip.x + 16
+              )
+            )}px`,
+            top: `${Math.max(
+              12,
+              Math.min(
+                typeof window !== 'undefined' ? window.innerHeight - 240 : 800,
+                notesTooltip.y + 16 > (typeof window !== 'undefined' ? window.innerHeight - 240 : 800)
+                  ? notesTooltip.y - 210
+                  : notesTooltip.y + 16
+              )
+            )}px`,
+          }}
+        >
+          <div className="w-80 sm:w-84 rounded-xl bg-slate-900/95 text-white p-3.5 shadow-2xl border border-slate-700/80 backdrop-blur-md animate-in fade-in-0 zoom-in-95 duration-100">
+            {/* Top category & timing */}
+            <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-1.5 min-w-0">
+                {notesTooltip.task.isMilestone ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-950/80 border border-amber-500/40 px-2 py-0.5 rounded-full shrink-0">
+                    <Sparkles className="w-3 h-3 text-amber-400" />
+                    <span>Hito</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-300 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full truncate shrink-0">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        TASK_COLORS[notesTooltip.task.color]?.bg || 'bg-indigo-500'
+                      }`}
+                    />
+                    <span>{notesTooltip.task.category}</span>
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] font-semibold text-indigo-300 shrink-0">
+                {notesTooltip.task.isMilestone
+                  ? `Día ${notesTooltip.task.startDay}`
+                  : `Día ${notesTooltip.task.startDay} al ${
+                      notesTooltip.task.startDay + notesTooltip.task.duration - 1
+                    }`}
+              </span>
+            </div>
+
+            {/* Task Name */}
+            <h4 className="font-semibold text-white text-[13px] leading-snug mb-2 break-words">
+              {notesTooltip.task.name}
+            </h4>
+
+            {/* Quick Metadata */}
+            <div className="flex flex-wrap items-center gap-1.5 mb-2.5 text-[10px] text-slate-300">
+              {notesTooltip.task.assignee && (
+                <span className="inline-flex items-center gap-1 bg-slate-800/90 px-2 py-0.5 rounded border border-slate-700/60">
+                  <User className="w-3 h-3 text-slate-400" />
+                  <span className="text-slate-200">{notesTooltip.task.assignee}</span>
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1 bg-slate-800/90 px-2 py-0.5 rounded border border-slate-700/60">
+                <Calendar className="w-3 h-3 text-slate-400" />
+                <span>
+                  {notesTooltip.task.duration}{' '}
+                  {notesTooltip.task.duration === 1 ? 'día' : 'días'}
+                </span>
+              </span>
+              {notesTooltip.task.progress > 0 && (
+                <span className="inline-flex items-center gap-1 bg-slate-800/90 px-2 py-0.5 rounded border border-slate-700/60">
+                  <span>Progreso: {notesTooltip.task.progress}%</span>
+                </span>
+              )}
+            </div>
+
+            {/* Notas Adicionales Section */}
+            <div className="rounded-lg p-2.5 bg-indigo-950/40 border border-indigo-500/30 text-slate-200">
+              <div className="flex items-center gap-1.5 font-semibold text-[11px] text-indigo-300 mb-1">
+                <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span>Notas adicionales:</span>
+              </div>
+              {notesTooltip.task.notes && notesTooltip.task.notes.trim() ? (
+                <p className="text-[11px] leading-relaxed text-slate-100 whitespace-pre-wrap break-words font-normal">
+                  {notesTooltip.task.notes}
+                </p>
+              ) : (
+                <p className="text-[11px] text-slate-400 italic">
+                  Sin notas adicionales registradas en esta actividad.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Footer Info / Legend Bar */}
       <footer className="h-10 px-4 sm:px-8 bg-slate-50 border-t border-slate-200 text-[11px] text-slate-500 font-medium flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-4 flex-wrap">
@@ -1100,7 +1256,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
         <div className="hidden md:flex items-center gap-2 text-slate-400">
           <span>
             {readOnly
-              ? '* Modo consulta: visualización de actividades en tiempo real (solo lectura).'
+              ? '* Modo consulta: pasa el cursor sobre las actividades o barras del gráfico para ver sus notas adicionales.'
               : '* Arrastra o haz clic para mover, ajusta extremos o haz doble clic para editar.'}
           </span>
         </div>

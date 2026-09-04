@@ -556,7 +556,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <Eye className="w-4 h-4 text-amber-700 shrink-0" />
               <span>
-                <strong>Modo de Consulta:</strong> Estás viendo este cronograma en tiempo real (modo no editable). Puedes explorar las actividades y descargar la información en Excel.
+                <strong>Modo de Consulta:</strong> Estás viendo este cronograma en modo solo lectura. Pasa el cursor sobre las actividades o el gráfico para consultar las notas adicionales y detalles.
               </span>
             </div>
             <button

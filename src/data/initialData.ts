@@ -101,7 +101,7 @@ export const INITIAL_TASKS: Task[] = [
     duration: 3,
     progress: 100,
     color: 'indigo',
-    notes: 'Reunión inicial y levantamiento de especificaciones.',
+    notes: 'Reunión inicial y levantamiento de especificaciones con el cliente y líderes de equipo.',
   },
   {
     id: 'task-2',
@@ -112,6 +112,7 @@ export const INITIAL_TASKS: Task[] = [
     duration: 3,
     progress: 100,
     color: 'indigo',
+    notes: 'Análisis de 5 herramientas de gestión de cronogramas y encuestas a jefes de proyecto.',
   },
   {
     id: 'task-3',
@@ -123,6 +124,7 @@ export const INITIAL_TASKS: Task[] = [
     progress: 80,
     color: 'sky',
     dependsOn: 'task-1',
+    notes: 'Validación de estructura de cuadrícula responsiva y visualización por días.',
   },
   {
     id: 'task-4',
@@ -134,6 +136,7 @@ export const INITIAL_TASKS: Task[] = [
     progress: 60,
     color: 'sky',
     dependsOn: 'task-3',
+    notes: 'Definición de paleta cromática, contrastes de accesibilidad WCAG y exportación a Excel.',
   },
   {
     id: 'task-5',
@@ -146,6 +149,7 @@ export const INITIAL_TASKS: Task[] = [
     color: 'sky',
     isMilestone: true,
     dependsOn: 'task-4',
+    notes: 'Hito clave: aprobación formal del diseño final para dar pase a la fase de construcción.',
   },
   {
     id: 'task-6',
@@ -156,6 +160,7 @@ export const INITIAL_TASKS: Task[] = [
     duration: 4,
     progress: 75,
     color: 'emerald',
+    notes: 'Configuración de esquema en Firebase Firestore con sincronización reactiva en tiempo real.',
   },
   {
     id: 'task-7',
@@ -167,6 +172,7 @@ export const INITIAL_TASKS: Task[] = [
     progress: 40,
     color: 'emerald',
     dependsOn: 'task-6',
+    notes: 'Cálculo dinámico de columnas por día total y vinculación de dependencias entre tareas.',
   },
   {
     id: 'task-8',
@@ -178,6 +184,7 @@ export const INITIAL_TASKS: Task[] = [
     progress: 15,
     color: 'emerald',
     dependsOn: 'task-7',
+    notes: 'Soporte para interacción mediante arrastre de barras, ajuste de bordes y doble clic para editar.',
   },
   {
     id: 'task-9',
@@ -189,6 +196,7 @@ export const INITIAL_TASKS: Task[] = [
     progress: 0,
     color: 'amber',
     dependsOn: 'task-8',
+    notes: 'Pruebas de estrés de sincronización colaborativa, exportación Excel y modo consulta en vivo.',
   },
   {
     id: 'task-10',
@@ -199,6 +207,7 @@ export const INITIAL_TASKS: Task[] = [
     duration: 3,
     progress: 0,
     color: 'amber',
+    notes: 'Verificación en navegadores móviles, modo solo lectura y rendimiento de renderizado.',
   },
   {
     id: 'task-11',
@@ -211,5 +220,6 @@ export const INITIAL_TASKS: Task[] = [
     color: 'rose',
     isMilestone: true,
     dependsOn: 'task-9',
+    notes: 'Despliegue de la versión productiva y entrega de credenciales y accesos al cliente.',
   },
 ];
